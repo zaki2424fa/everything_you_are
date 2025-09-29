@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pemutar Lirik — Hindia "Everything U Are"</title>
+  <style>
+    :root{
+      --bg:#0b0b0f; --panel:#12121a; --text:#e8e8f0; --muted:#a4a4b5; --accent:#1db954;
+      --track:#2a2a36; --thumb:#e8e8f0; --highlight:#ffffff; --highlight-bg:#1db95422;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu;
+      background: radial-gradient(1200px 600px at 70% -10%, #1b1b27, #0b0b0f 50%), var(--bg);
+      color:var(--text); display:grid; place-items:center; padding:24px;
+    }
+    .player{
+      width:min(980px, 100%); background:var(--panel); border-radius:20px; overflow:hidden;
+      box-shadow:0 10px 40px rgba(0,0,0,.45);
+      display:grid; grid-template-columns:360px 1fr; gap:0; min-height:540px;
+    }
+    @media (max-width:900px){
+      .player{ grid-template-columns:1fr; }
+      .cover{ height:300px }
+    }
+    .cover{
+      position:relative; background:#111; display:grid; place-items:center; overflow:hidden;
+    }
+    .cover img{ width:100%; height:100%; object-fit:cover; display:block; }
+    .cover .fallback{ position:absolute; inset:0; display:grid; place-items:center; background:linear-gradient(135deg,#2e2e3d,#161621); color:#9fa0b8; }
+    .meta{ position:absolute; left:16px; bottom:16px; right:16px; backdrop-filter: blur(6px); background: #0006; border:1px solid #ffffff14; padding:12px 14px; border-radius:12px; }
+    .title{ font-weight:700; letter-spacing:.2px; }
+    .artist{ color:var(--muted); font-size:.95rem; margin-top:2px }
+
+    .right{ display:flex; flex-direction:column; }
+    .controls{ padding:18px 18px 8px; border-bottom:1px solid #ffffff10; }
+    .buttons{ display:flex; align-items:center; gap:14px }
+    .btn{
+      all:unset; display:grid; place-items:center; width:46px; height:46px; border-radius:999px;
+      background:#1f1f2a; cursor:pointer; transition:.2s transform, .2s background;
+      border:1px solid #ffffff10;
+    }
+    .btn:hover{ transform:translateY(-1px); background:#262636 }
+    .btn.primary{ width:56px; height:56px; background:var(--accent); color:#000; border:none; }
+
+    .timebar{ display:flex; align-items:center; gap:10px; margin-top:12px; }
+    .time{ font-variant-numeric: tabular-nums; color:var(--muted); font-size:.9rem }
+    .seek{ position:relative; flex:1; height:8px; background:var(--track); border-radius:999px; cursor:pointer; }
+    .seek .fill{ position:absolute; inset:0 0 0 auto; width:0; background:var(--accent); border-radius:999px; }
+    .seek .thumb{ position:absolute; top:50%; transform:translate(-50%,-50%); width:14px; height:14px; border-radius:50%; background:var(--thumb); box-shadow:0 2px 8px #0007; left:0; }
+
+    /* Scroll lirik standar (auto), kita haluskan lewat JS */
+    .lyrics{
+      flex: none; /* Hapus flex-grow agar tinggi bisa diatur */
+      height: 320px; /* Atur tinggi agar pas untuk ~8 baris */
+      overflow: hidden; /* Sembunyikan scrollbar, kita kontrol via JS */
+      padding: 12px 18px 18px; position:relative;
+    }
+    .lyrics-inner{ max-width:720px; margin:0 auto; }
+    .line{ padding:6px 10px; margin:2px 0; color:var(--muted); border-radius:10px; transition:.2s background, .2s color; }
+    .line.active{ color:var(--highlight); background:var(--highlight-bg); }
+    .line .ts{ opacity:.35; font-size:.8rem; margin-right:8px }
+
+    .footer{ padding:10px 18px 18px; color:#9fa0b8; font-size:.9rem }
+    .hint{ opacity:.9 }
+    .filepick{ display:flex; gap:12px; align-items:center; margin-top:6px }
+    .filepick input{ display:none }
+    .filepick label{ border:1px dashed #ffffff2a; padding:8px 10px; border-radius:10px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div class="player" id="player">
+    <div class="cover">
+      <img id="coverImg" src="cover.png" alt="Cover Album" onerror="this.style.display='none';document.getElementById('coverFallback').style.display='grid'">
+      <div id="coverFallback" class="fallback" style="display:none">Unggah <code>cover.png</code></div>
+      <div class="meta">
+        <div class="title">Everything U Are</div>
+        <div class="artist">Hindia</div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="controls">
+        <div class="buttons">
+          <button class="btn" id="back10" title="Mundur 10 detik" aria-label="Mundur 10 detik">⏪</button>
+          <button class="btn primary" id="playPause" title="Putar/Jeda" aria-label="Putar atau jeda">▶️</button>
+          <button class="btn" id="fwd10" title="Maju 10 detik" aria-label="Maju 10 detik">⏩</button>
+        </div>
+        <div class="timebar">
+          <span class="time" id="cur">0:00</span>
+          <div class="seek" id="seek">
+            <div class="fill" id="fill"></div>
+            <div class="thumb" id="thumb"></div>
+          </div>
+          <span class="time" id="dur">0:00</span>
+        </div>
+      </div>
+
+      <div class="lyrics" id="lyrics" aria-live="polite">
+        <div class="lyrics-inner" id="lyricsInner">
+          <!-- Baris lirik akan terisi otomatis dari file LRC -->
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="hint">
+          🔊 Letakkan berkas <b>lagu.mp3</b>, <b>lyrics.lrc</b>, dan opsional <b>cover.png</b> di folder yang sama dengan file ini.
+        </div>
+        <div class="filepick">
+          <label for="mp3Input">Ganti MP3… <input id="mp3Input" type="file" accept="audio/mpeg" /></label>
+          <label for="lrcInput">Ganti LRC… <input id="lrcInput" type="file" accept="text/plain,.lrc" /></label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <audio id="audio" src="lagu.mp3" preload="metadata"></audio>
+
+  <script>
+    // ===== Utilitas waktu =====
+    const fmt = s=>{
+      if(!isFinite(s)) return '0:00';
+      s = Math.max(0, Math.floor(s));
+      const m = Math.floor(s/60), sec = s%60; return m+":"+String(sec).padStart(2,'0');
+    }
+
+    // ===== Ambil elemen =====
+    const audio = document.getElementById('audio');
+    const playPause = document.getElementById('playPause');
+    const back10 = document.getElementById('back10');
+    const fwd10 = document.getElementById('fwd10');
+    const curEl = document.getElementById('cur');
+    const durEl = document.getElementById('dur');
+    const seek = document.getElementById('seek');
+    const fill = document.getElementById('fill');
+    const thumb = document.getElementById('thumb');
+    const lyricsInner = document.getElementById('lyricsInner');
+    const lyricsEl = document.getElementById('lyrics');
+
+    // ===== Status =====
+    let lrcLines = []; // {t: detik, text: string}
+    let activeIndex = -1;
+    let userScrolling = false; // cegah "berkelahi" saat user scroll manual
+    let rafId = null;
+
+    // ===== Parser LRC =====
+    function parseLRC(text){
+      const out = [];
+      const lines = text.split(/\r?\n/);
+      for(const raw of lines){
+        if(!raw.trim()) continue;
+        const m = [...raw.matchAll(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g)];
+        if(!m.length){ continue; }
+        const content = raw.replace(/^(?:\[[^\]]+\])+\s*/, '');
+        for(const g of m){
+          const min = parseInt(g[1],10), sec = parseInt(g[2],10), ms = parseInt(g[3]||'0',10);
+          const t = min*60 + sec + (ms>=100? ms/1000 : ms/100);
+          out.push({ t, text: content || '' });
+        }
+      }
+      out.sort((a,b)=>a.t-b.t);
+      return out;
+    }
+
+    // ===== Helper pencarian indeks berdasarkan waktu =====
+    function findCurrentLineIndex(t){
+      if(!lrcLines.length) return -1;
+      let lo=0, hi=lrcLines.length-1, ans=0;
+      while(lo<=hi){
+        const mid=(lo+hi)>>1;
+        if(lrcLines[mid].t<=t){ ans=mid; lo=mid+1; } else { hi=mid-1; }
+      }
+      return ans;
+    }
+
+    // ===== Render lirik =====
+    function renderLyrics(){
+      lyricsInner.innerHTML = '';
+      for(const [i,line] of lrcLines.entries()){
+        const div = document.createElement('div');
+        div.className = 'line';
+        div.dataset.index = i;
+        const ts = document.createElement('span');
+        ts.className = 'ts'; ts.textContent = timeTag(line.t);
+        const txt = document.createElement('span');
+        txt.textContent = line.text || '\u00A0';
+        div.appendChild(ts); div.appendChild(txt);
+        lyricsInner.appendChild(div);
+      }
+    }
+
+    function timeTag(t){
+      const m = Math.floor(t/60), s = Math.floor(t%60), ms = Math.floor((t - Math.floor(t))*100);
+      return `[${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(2,'0')}]`;
+    }
+
+    function setActive(index, immediate=false){
+      if(index === activeIndex || index < 0) return;
+      const prev = lyricsInner.querySelector('.line.active');
+      if(prev) prev.classList.remove('active');
+      const next = lyricsInner.querySelector(`.line[data-index="${index}"]`);
+      if(next){
+        next.classList.add('active');
+        // Scroll sekarang ditangani oleh loop animasi, bukan dipicu di sini
+        if(immediate) updateScrollPosition(true);
+      }
+      activeIndex = index;
+    }
+
+    // ===== Auto scroll halus ke baris aktif =====
+    function updateScrollPosition(immediate = false){
+      const active = lyricsInner.querySelector('.line.active');
+      if(!active) return;
+      const container = lyricsEl;
+      // Ubah target scroll: baris aktif akan berada di paling atas
+      const target = active.offsetTop;
+      const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+      const dest = clamp(target, 0, maxScroll);
+
+      if(userScrolling) return;
+
+      if(immediate) {
+        container.scrollTop = dest;
+        return;
+      }
+
+      // Interpolasi linear untuk pergerakan yang konstan dan halus
+      const start = container.scrollTop;
+      const dist = dest - start;
+      
+      // Jika jaraknya sangat kecil, tidak perlu dianimasikan
+      if (Math.abs(dist) < 1) return;
+
+      // Faktor kecepatan, semakin kecil nilainya semakin halus pergerakannya
+      const speedFactor = 0.08;
+      container.scrollTop += dist * speedFactor;
+    }
+
+    // Tandai saat user scroll manual
+    let scrollTimeout;
+    lyricsEl.addEventListener('wheel', ()=>{ userScrolling=true; clearTimeout(scrollTimeout); scrollTimeout=setTimeout(()=>userScrolling=false, 400); }, {passive:true});
+    lyricsEl.addEventListener('touchmove', ()=>{ userScrolling=true; clearTimeout(scrollTimeout); scrollTimeout=setTimeout(()=>userScrolling=false, 400); }, {passive:true});
+
+    // ===== Sinkronisasi waktu -> lirik =====
+    function updateLyricByTime(t){
+      if(!lrcLines.length) return;
+      setActive(findCurrentLineIndex(t), false);
+    }
+
+    // ===== Kontrol audio =====
+    playPause.addEventListener('click', ()=>{
+      if(audio.paused){ audio.play(); } else { audio.pause(); }
+    });
+    audio.addEventListener('play', ()=>{ playPause.textContent = '⏸️'; });
+    audio.addEventListener('pause', ()=>{ playPause.textContent = '▶️'; });
+
+    back10.addEventListener('click', ()=>{ audio.currentTime = Math.max(0, audio.currentTime - 10); updateLyricByTime(audio.currentTime); });
+    fwd10.addEventListener('click', ()=>{ audio.currentTime = Math.min(audio.duration||0, audio.currentTime + 10); updateLyricByTime(audio.currentTime); });
+
+    audio.addEventListener('loadedmetadata', ()=>{ durEl.textContent = fmt(audio.duration); });
+    audio.addEventListener('timeupdate', ()=>{
+      curEl.textContent = fmt(audio.currentTime);
+      const ratio = (audio.currentTime / (audio.duration||1));
+      fill.style.width = `${ratio*100}%`;
+      thumb.style.left = `${ratio*100}%`;
+      updateLyricByTime(audio.currentTime + 0.05); // offset kecil agar nyaman
+    });
+
+    // Keyboard: spasi untuk play/pause
+    window.addEventListener('keydown', (e)=>{
+      if(e.code === 'Space') { e.preventDefault(); playPause.click(); }
+      if(e.code === 'ArrowLeft') { audio.currentTime = Math.max(0, audio.currentTime - 5); }
+      if(e.code === 'ArrowRight') { audio.currentTime = Math.min(audio.duration||0, audio.currentTime + 5); }
+    });
+
+    // Seeking (klik/tarik)
+    let seeking = false;
+    function seekTo(clientX){
+      const rect = seek.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (clientX - rect.left)/rect.width));
+      const t = ratio * (audio.duration||0);
+      audio.currentTime = t;
+      curEl.textContent = fmt(t);
+      fill.style.width = `${ratio*100}%`;
+      thumb.style.left = `${ratio*100}%`;
+      // Update lirik tanpa animasi scroll (immediate)
+      setActive(findCurrentLineIndex(t), true);
+    }
+    seek.addEventListener('pointerdown', (e)=>{ seeking=true; seek.setPointerCapture(e.pointerId); seekTo(e.clientX); });
+    seek.addEventListener('pointermove', (e)=>{ if(seeking) seekTo(e.clientX); });
+    seek.addEventListener('pointerup',   (e)=>{ seeking=false; try{ seek.releasePointerCapture(e.pointerId);}catch{} });
+
+    // ===== Loader default: coba ambil lyrics.lrc =====
+    async function loadDefault(){
+      try{
+        const resp = await fetch('lyrics.lrc');
+        if(!resp.ok) throw 0;
+        const text = await resp.text();
+        lrcLines = parseLRC(text);
+        renderLyrics();
+      }catch(err){
+        // Contoh placeholder — silakan ganti dengan lirik yang Anda miliki haknya
+        const example = `
+[00:00.00]Hindia - Everything U Are
+[00:11.00]Wajahmu kuingat selalu
+[00:19.00]Lupakan hal-hal yang menggangguku
+[00:25.90]Kar'na hari ini mata kita beradu
+[00:32.50]Kita saling bantu
+[00:34.25]Melepas perasaan
+[00:38.80]Tinggi ke angkasa
+[00:42.20]Menantang dunia
+[00:44.80]Merayakan muda
+[00:48.20]'Tuk satu jam saja
+[00:58.80]Kita hampir mati
+[01:03.20]Dan kauselamatkan aku
+[01:07.80]Dan ku menyelamatkanmu
+[01:12.20]Dan sekarang aku tahu
+[01:16.80]Cerita kita tak jauh berbeda
+[01:21.20]Got beat down by the world
+[01:25.80]Sometimes I wanna fold
+[01:30.20]Namun, suratmu 'kan kuceritakan
+[01:34.80]Ke anak-anakku nanti
+[01:39.20]Bahwa aku pernah dicintai
+[01:43.80]With everything you are
+[01:48.20]Fully as I am
+[01:52.80]With everything you are
+[02:01.80]Wajahmu yang beragam rupa
+[02:06.20]Pastikan ku tak sendirian
+[02:10.80]Jalani derita
+[02:15.20]Kaubawakan kisahmu, aku mendengarkan
+[02:19.80]Oh, kita bergantian
+[02:24.20]Bertukar nestapa
+[02:28.80]Menawar trauma
+[02:33.20]Datang seadanya
+[02:37.80]Terasku terbuka
+[02:42.20]Kita hampir mati
+[02:46.80]Dan kauselamatkan aku
+[02:51.20]Dan ku menyelamatkanmu
+[02:55.80]Dan sekarang aku tahu
+[03:00.20]Cerita kita tak jauh berbeda
+[03:04.80]Got beat down by the world
+[03:09.20]Sometimes I wanna fold
+[03:13.80]Namun, suratmu 'kan kuceritakan
+[03:18.20]Ke anak-anakku nanti
+[03:22.80]Bahwa aku pernah dicintai
+[03:27.20]Seada-adanya
+[03:31.80]Sekurang-kurangnya
+[03:36.20]Walau sulit utarakan hatiku dengan indah
+[03:40.80]Walau jarang ku bernyanyi
+[03:45.20]Dengan cara yang indah
+[03:49.80]Tapi tak sekali pun kisahku
+[03:54.20]Pernah kaubantah, oh
+[03:58.80]Cerita kita tak jauh berbeda
+[04:03.20]Got beat down by the world (got beat down by the world)
+[04:07.80]Sometimes I wanna fold
+[04:12.20]Namun, suratmu 'kan kuceritakan
+[04:16.80]Ke anak-anakku nanti
+[04:21.20]Bahwa aku pernah dicintai
+[04:25.80]With everything you are
+[04:30.20]Fully as I am
+[04:34.80]With everything you are
+`;
+        lrcLines = parseLRC(example);
+        renderLyrics();
+      }
+    }
+
+    loadDefault();
+
+    // ===== Loop Animasi Utama untuk Scroll =====
+    function animationLoop() {
+      updateScrollPosition();
+      requestAnimationFrame(animationLoop);
+    }
+    animationLoop(); // Mulai loop
+
+    // ===== Input file manual =====
+    document.getElementById('mp3Input').addEventListener('change', (e)=>{
+      const f = e.target.files?.[0]; if(!f) return;
+      audio.src = URL.createObjectURL(f);
+      audio.play().catch(()=>{});
+    });
+
+    document.getElementById('lrcInput').addEventListener('change', (e)=>{
+      const f = e.target.files?.[0]; if(!f) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{ lrcLines = parseLRC(String(reader.result||'')); renderLyrics(); updateLyricByTime(audio.currentTime||0); };
+      reader.readAsText(f);
+    });
+
+    // Sinkron saat selesai seek
+    audio.addEventListener('seeked', ()=> setActive(findCurrentLineIndex(audio.currentTime||0), true));
+
+    // Re-center saat resize
+    window.addEventListener('resize', ()=> updateScrollPosition(true));
+  </script>
+</body>
+</html>
